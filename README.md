@@ -594,8 +594,8 @@ Goal: Get CI green without hiding genuine regressions or sacrificing meaningful 
 
 ## Maintainer Table
 
-maintainer - Aycode01
-telegram channel - [telegram](https://t.me/aycode01)
+**maintainer** - Aycode01
+**telegram channel** - [telegram](https://t.me/aycode01)
 
 
 ## License
