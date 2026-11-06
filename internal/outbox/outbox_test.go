@@ -3,7 +3,6 @@ package outbox
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -113,8 +112,9 @@ func (suite *OutboxTestSuite) SetupTest() {
 		PublisherType:    "console",
 	}
 	
-	suite.service, err = NewService(suite.db, serviceConfig)
+	service, err := NewService(suite.db, serviceConfig)
 	require.NoError(suite.T(), err)
+	suite.service = service
 }
 
 // TearDownTest runs after each test

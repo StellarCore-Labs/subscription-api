@@ -43,7 +43,7 @@ func TestHealth(t *testing.T) {
 
 // --- Plans ---
 
-func TestListPlans(t *testing.T) {
+func TestListPlansPackageLevel(t *testing.T) {
 	c, w := newContext(http.MethodGet, "/api/plans")
 	ListPlans(c)
 
@@ -65,7 +65,7 @@ func TestListPlans(t *testing.T) {
 
 // --- Subscriptions ---
 
-func TestListSubscriptions(t *testing.T) {
+func TestListSubscriptionsPackageLevel(t *testing.T) {
 	c, w := newContext(http.MethodGet, "/api/subscriptions")
 	ListSubscriptions(c)
 

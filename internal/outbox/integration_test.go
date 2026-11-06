@@ -1,8 +1,8 @@
 package outbox
 
 import (
-	"context"
 	"database/sql"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -346,7 +346,6 @@ func TestBackoffStrategy(t *testing.T) {
 	
 	// Track retry times
 	var retryTimes []time.Time
-	startTime := time.Now()
 	
 	for i := 0; i < 3; i++ {
 		time.Sleep(500 * time.Millisecond)

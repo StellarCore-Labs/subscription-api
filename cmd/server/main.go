@@ -2,18 +2,20 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
 
-	"database/sql"
-
 	"github.com/gin-gonic/gin"
-	"stellarbill-backend/internal/audit"
+	"go.uber.org/zap"
+
 	"stellarbill-backend/internal/config"
-	"stellarbill-backend/internal/handlers"
+	"stellarbill-backend/internal/middleware"
 	"stellarbill-backend/internal/routes"
+	"stellarbill-backend/internal/security"
 	"stellarbill-backend/internal/shutdown"
 	"stellarbill-backend/internal/startup"
 )
@@ -31,22 +33,19 @@ func main() {
 
 	// Init PII-safe logger
 	var logger *zap.Logger
-	if cfg.Env == "production" {
+	switch cfg.Env {
+	case "production":
 		logger = security.ProductionLogger()
-		defer logger.Sync()
 		gin.SetMode(gin.ReleaseMode)
-		logger.Info("Running in production mode")
-	} else if cfg.Env == "development" {
+	case "development":
 		logger = security.DevLogger()
-		defer logger.Sync()
 		gin.SetMode(gin.DebugMode)
-		logger.Info("Running in development mode")
-	} else {
+	default:
 		logger = security.ProductionLogger()
-		defer logger.Sync()
 		gin.SetMode(gin.TestMode)
-		logger.Info("Running in test mode", zap.String("env", cfg.Env))
 	}
+	defer func() { _ = logger.Sync() }()
+	logger.Info("Starting stellarbill backend", zap.String("env", cfg.Env))
 
 	// Log config warnings
 	if vResult := cfg.Validate(); len(vResult.Warnings) > 0 {
@@ -61,29 +60,10 @@ func main() {
 		logger.Fatal("Startup checks failed — aborting")
 	}
 
-	// Create router with configured middleware
-	router := gin.New()
-	router.Use(gin.Recovery())
-	router.Use(middleware.Logger(logger))
+	// Create the router with configured middleware and routes.
+	router := newRouter()
 
-	// Security headers middleware
-	router.Use(func(c *gin.Context) {
-		c.Header("X-Content-Type-Options", "nosniff")
-		c.Header("X-Frame-Options", "DENY")
-		c.Header("X-XSS-Protection", "1; mode=block")
-		c.Next()
-	})
-
-	// Wire up services and handlers, then register routes
-	planSvc := services.NewPlanService()
-	subSvc := services.NewSubscriptionService()
-	h := handlers.NewHandler(planSvc, subSvc)
-	routes.Register(router, h)
-
-	// Build server address
 	addr := fmt.Sprintf(":%d", cfg.Port)
-
-	// Create HTTP server with configuration
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      router,
@@ -92,9 +72,7 @@ func main() {
 		IdleTimeout:  time.Duration(cfg.IdleTimeout) * time.Second,
 	}
 
-	logger.Info("Starting Stellarbill backend",
-		zap.String("addr", addr),
-		zap.String("env", cfg.Env))
+	logger.Info("Starting Stellarbill backend server", zap.String("addr", addr))
 	logger.Info("Server timeouts",
 		zap.Int("read", cfg.ReadTimeout),
 		zap.Int("write", cfg.WriteTimeout),
@@ -121,7 +99,7 @@ func main() {
 	serverErrors := make(chan error, 1)
 	go func() {
 		log.Println("Listening for connections...")
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := listenAndServe(srv); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrors <- err
 		}
 	}()
@@ -130,39 +108,28 @@ func main() {
 	go gracefulShutdown.ListenForShutdownSignals()
 
 	// Wait for either a server error or shutdown completion
+	shutdownDone := make(chan struct{})
+	go func() {
+		gracefulShutdown.Wait()
+		close(shutdownDone)
+	}()
+
 	select {
 	case err := <-serverErrors:
 		log.Fatalf("Server error: %v", err)
-	case <-func() <-chan struct{} {
-		// Wait for graceful shutdown to complete
-		done := make(chan struct{})
-		go func() {
-			gracefulShutdown.Wait()
-			close(done)
-		}()
-		return done
-	}():
+	case <-shutdownDone:
 		log.Println("Server shutdown completed successfully")
 	}
+}
 
-	logger.Init()
-
-	r := gin.New()
-
-	r.Use(middleware.RecoveryLogger())
-	r.Use(middleware.RequestLogger())
-
-	var db *sql.DB = nil // existing or future DB
-
-	routes.RegisterRoutes(r, db)
-
-	r.Run()
+func printConfigError(err error) {
+	fmt.Fprintf(os.Stderr, "configuration error: %v\n", err)
 }
 
 func newRouter() *gin.Engine {
 	router := gin.New()
 	router.Use(
-		middleware.Recovery(log.Default()),
+		middleware.Recovery(),
 		middleware.RequestID(),
 		middleware.Logging(log.Default()),
 		middleware.CORS("*"),
@@ -171,4 +138,3 @@ func newRouter() *gin.Engine {
 	routes.Register(router)
 	return router
 }
-

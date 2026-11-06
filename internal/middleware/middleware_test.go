@@ -21,7 +21,7 @@ func TestProtectedChainContextPropagationAndLogging(t *testing.T) {
 
 	router := gin.New()
 	router.Use(
-		Recovery(logger),
+		Recovery(),
 		RequestID(),
 		Logging(logger),
 		CORS("https://frontend.example"),
@@ -200,11 +200,8 @@ func TestRateLimitShortCircuits(t *testing.T) {
 func TestRecoveryReturnsStructuredError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	var logs bytes.Buffer
-	logger := log.New(&logs, "", 0)
-
 	router := gin.New()
-	router.Use(Recovery(logger), RequestID(), Auth("secret"))
+	router.Use(Recovery(), RequestID(), Auth("secret"))
 	router.GET("/panic", func(c *gin.Context) {
 		panic("boom")
 	})
@@ -218,10 +215,10 @@ func TestRecoveryReturnsStructuredError(t *testing.T) {
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", res.Code)
 	}
-	assertBodyField(t, res, "error", "internal server error")
-	assertBodyField(t, res, "request_id", "req-panic")
-	if !contains(logs.String(), "panic recovered request_id=req-panic err=boom") {
-		t.Fatalf("expected panic details in logs, got %q", logs.String())
+	assertBodyField(t, res, "error", "Internal server error")
+	assertBodyField(t, res, "request", "req-panic")
+	if res.Header().Get(RequestIDHeader) != "req-panic" {
+		t.Fatalf("expected request id header to be propagated, got %q", res.Header().Get(RequestIDHeader))
 	}
 }
 

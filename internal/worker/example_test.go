@@ -2,10 +2,11 @@ package worker
 
 import (
 	"context"
+	"fmt"
+	"time"
+
 	"go.uber.org/zap"
 	"stellarbill-backend/internal/security"
-	"testing"
-	"time"
 )
 
 type CustomExecutor struct{}
@@ -35,7 +36,7 @@ func ExampleCustomExecutor() {
 	w.Stop()
 }
 
-func ExampleConcurrentWorkers() {
+func ExampleWorker_concurrentWorkers() {
 	// Shared store
 	store := NewMemoryStore()
 	executor := NewBillingExecutor()

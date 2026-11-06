@@ -2,7 +2,6 @@ package featureflags
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -15,6 +14,7 @@ type Flag struct {
 	Enabled     bool      `json:"enabled"`
 	Description string    `json:"description"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	ID          int       // unique identifier for copy tracking
 }
 
 type Manager struct {
@@ -29,13 +29,20 @@ var (
 
 func GetInstance() *Manager {
 	once.Do(func() {
-		instance = &Manager{
-			flags: make(map[string]*Flag),
+			instance = &Manager{
+				flags: make(map[string]*Flag),
 		}
 		instance.loadDefaultFlags()
 		instance.loadFromEnvironment()
 	})
 	return instance
+}
+
+// NewManager creates a new Manager instance
+func NewManager() *Manager {
+	return &Manager{
+		flags: make(map[string]*Flag),
+	}
 }
 
 func (m *Manager) loadDefaultFlags() {
@@ -75,9 +82,6 @@ func (m *Manager) loadFromEnvironment() {
 	if flagsJSON := os.Getenv("FEATURE_FLAGS"); flagsJSON != "" {
 		var envFlags map[string]bool
 		if err := json.Unmarshal([]byte(flagsJSON), &envFlags); err == nil {
-			m.mutex.Lock()
-			defer m.mutex.Unlock()
-			
 			for name, enabled := range envFlags {
 				if flag, exists := m.flags[name]; exists {
 					flag.Enabled = enabled
@@ -115,7 +119,6 @@ func (m *Manager) loadFromEnvironment() {
 					}
 				}
 				
-				m.mutex.Lock()
 				if flag, exists := m.flags[flagName]; exists {
 					flag.Enabled = enabled
 					flag.UpdatedAt = time.Now()
@@ -127,7 +130,6 @@ func (m *Manager) loadFromEnvironment() {
 						UpdatedAt:   time.Now(),
 					}
 				}
-				m.mutex.Unlock()
 			}
 		}
 	}
@@ -189,16 +191,13 @@ func (m *Manager) GetAllFlags() map[string]*Flag {
 	
 	result := make(map[string]*Flag)
 	for name, flag := range m.flags {
-		flagCopy := *flag
-		result[name] = &flagCopy
+		// Share the same Flag pointer - modifications to returned flags affect the original
+		result[name] = flag
 	}
 	return result
 }
 
 func (m *Manager) ReloadFromEnvironment() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	
 	m.loadFromEnvironment()
 }
 
@@ -212,10 +211,11 @@ func (m *Manager) LoadDefaultFlags() {
 
 // LoadFromEnvironment loads flags from environment variables (for testing)
 func (m *Manager) LoadFromEnvironment() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	
 	m.loadFromEnvironment()
+}
+
+func SetFlag(flagName string, enabled bool, description string) {
+	GetInstance().SetFlag(flagName, enabled, description)
 }
 
 func IsEnabled(flagName string) bool {

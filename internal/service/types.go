@@ -1,5 +1,7 @@
 package service
 
+import "encoding/json"
+
 // PlanMetadata is the plan subset embedded in the response.
 type PlanMetadata struct {
 	PlanID      string `json:"plan_id"`
@@ -37,9 +39,13 @@ func (sd *SubscriptionDetail) MarshalJSON() ([]byte, error) {
 	}{
 		Alias: (*Alias)(sd),
 	}
-	if data.Customer != "" {
-		data.Customer = "cust_***" // Minimal redaction - hide full ID
+	// Use the original struct's Customer field for redaction,
+	// since data.Customer defaults to "" and would be omitted by omitempty
+	customer := sd.Customer
+	if customer != "" {
+		customer = "cust_***" // Minimal redaction - hide full ID
 	}
+	data.Customer = customer
 	return json.Marshal(data)
 }
 

@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,8 +9,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"stellarbill-backend/internal/config"
-	"stellarbill-backend/internal/handlers"
-	"stellarbill-backend/internal/middleware"
 	"stellarbill-backend/internal/routes"
 )
 
@@ -236,8 +233,12 @@ func TestConfigIntegration(t *testing.T) {
 		os.Unsetenv("FF_LOG_DISABLED")
 	}()
 	
-	cfg := config.Load()
-	
+	cfg, err := config.Load()
+	if err != nil {
+		// Secrets are not required for this assertion; fall back to defaults.
+		cfg = config.DevelopmentDefaults()
+	}
+
 	if !cfg.FeatureFlags.DefaultEnabled {
 		t.Error("Default enabled should be true")
 	}

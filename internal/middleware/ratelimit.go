@@ -101,29 +101,34 @@ func NewAPIRateLimiter(config RateLimiterConfig) *APIRateLimiter {
 	}
 
 	// Start cleanup goroutine
-	go rl.cleanupExpiredBuckets()
+	go rl.cleanupLoop()
 
 	return rl
 }
 
-// cleanupExpiredBuckets removes unused buckets to prevent memory leaks
+// cleanupExpiredBuckets performs a single sweep, removing idle buckets to
+// prevent unbounded memory growth.
 func (rl *APIRateLimiter) cleanupExpiredBuckets() {
+	rl.mutex.Lock()
+	defer rl.mutex.Unlock()
+
+	now := time.Now()
+	for key, bucket := range rl.buckets {
+		bucket.mutex.Lock()
+		// Remove buckets that haven't been used for 10 minutes
+		if now.Sub(bucket.lastRefill) > 10*time.Minute {
+			delete(rl.buckets, key)
+		}
+		bucket.mutex.Unlock()
+	}
+}
+
+// cleanupLoop runs cleanupExpiredBuckets on every ticker tick until Stop.
+func (rl *APIRateLimiter) cleanupLoop() {
 	for {
 		select {
 		case <-rl.cleanup.C:
-			rl.mutex.Lock()
-			now := time.Now()
-
-			for key, bucket := range rl.buckets {
-				bucket.mutex.Lock()
-				// Remove buckets that haven't been used for 10 minutes
-				if now.Sub(bucket.lastRefill) > 10*time.Minute {
-					delete(rl.buckets, key)
-				}
-				bucket.mutex.Unlock()
-			}
-
-			rl.mutex.Unlock()
+			rl.cleanupExpiredBuckets()
 		case <-rl.stopChan:
 			return
 		}

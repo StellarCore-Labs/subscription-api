@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"log"
 	"net/http"
 	"strings"
@@ -16,6 +14,8 @@ const (
 	RequestIDHeader = "X-Request-ID"
 	RequestIDKey    = "request_id"
 	AuthSubjectKey  = "auth_subject"
+	// maxRequestIDLength bounds the length of a client-supplied request ID.
+	maxRequestIDLength = 32
 )
 
 type RateLimiter struct {
@@ -44,24 +44,13 @@ func RequestID() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := sanitizeRequestID(c.GetHeader(RequestIDHeader))
 		if requestID == "" {
-			requestID = newRequestID()
+			requestID = generateRequestID()
 		}
 
 		c.Set(RequestIDKey, requestID)
 		c.Writer.Header().Set(RequestIDHeader, requestID)
 		c.Next()
 	}
-}
-
-func Recovery(logger *log.Logger) gin.HandlerFunc {
-	return gin.CustomRecovery(func(c *gin.Context, recovered any) {
-		requestID, _ := c.Get(RequestIDKey)
-		logger.Printf("panic recovered request_id=%v err=%v", requestID, recovered)
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-			"error":      "internal server error",
-			"request_id": requestID,
-		})
-	})
 }
 
 func Logging(logger *log.Logger) gin.HandlerFunc {
@@ -169,7 +158,7 @@ func (r *RateLimiter) Allow(key string) bool {
 
 func sanitizeRequestID(value string) string {
 	value = strings.TrimSpace(value)
-	if value == "" || len(value) > 128 {
+	if value == "" || len(value) > maxRequestIDLength {
 		return ""
 	}
 
@@ -190,14 +179,6 @@ func sanitizeRequestID(value string) string {
 		}
 	}
 	return b.String()
-}
-
-func newRequestID() string {
-	buf := make([]byte, 12)
-	if _, err := rand.Read(buf); err != nil {
-		return hex.EncodeToString([]byte(time.Now().Format("150405.000000000")))
-	}
-	return hex.EncodeToString(buf)
 }
 
 func DeprecationHeaders() gin.HandlerFunc {

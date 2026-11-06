@@ -26,12 +26,6 @@ type Config struct {
 	Audience string
 }
 
-// Claims represents our custom JWT structure
-type Claims struct {
-	UserID string `json:"user_id"`
-	jwt.RegisteredClaims
-}
-
 // JWTMiddleware creates a middleware verifying tokens against the provided config
 func JWTMiddleware(cfg Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -44,7 +38,7 @@ func JWTMiddleware(cfg Config) func(http.Handler) http.Handler {
 
 			// Expecting "Bearer <token>"
 			parts := strings.Split(authHeader, " ")
-			if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+			if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" || parts[1] == "" {
 				respondWithError(w, http.StatusUnauthorized, "invalid authorization format")
 				return
 			}

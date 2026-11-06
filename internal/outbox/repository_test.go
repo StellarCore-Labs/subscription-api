@@ -1,7 +1,6 @@
 package outbox
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"testing"

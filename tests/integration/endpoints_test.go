@@ -2,6 +2,7 @@ package integration
 
 import (
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +11,24 @@ import (
 	"stellarbill-backend/internal/routes"
 	"stellarbill-backend/internal/testutil"
 )
+
+func testConfig(t *testing.T) config.Config {
+	t.Helper()
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	return cfg
+}
+
+func TestMain(m *testing.M) {
+	// Require secrets make Load() strict; provide test-only values so the
+	// router and the token generator share the same JWT secret.
+	os.Setenv("JWT_SECRET", "TestSecret123!@#$%^&*()AbCdEfGh")
+	os.Setenv("DATABASE_URL", "postgres://localhost/stellarbill?sslmode=disable")
+	os.Exit(m.Run())
+}
 
 func setupRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
@@ -41,7 +60,7 @@ func TestHealthEndpointAuthnz(t *testing.T) {
 		},
 	}
 
-	cfg := config.Load()
+	cfg := testConfig(t)
 	tg := testutil.NewTestTokenGenerator(cfg.JWTSecret)
 
 	for _, tt := range tests {
@@ -74,7 +93,7 @@ func TestHealthEndpointAuthnz(t *testing.T) {
 
 func TestListPlansAuthenticationAndAuthorization(t *testing.T) {
 	router := setupRouter()
-	cfg := config.Load()
+	cfg := testConfig(t)
 	tg := testutil.NewTestTokenGenerator(cfg.JWTSecret)
 
 	tests := []struct {
@@ -162,7 +181,7 @@ func TestListPlansAuthenticationAndAuthorization(t *testing.T) {
 
 func TestListSubscriptionsAuthorizationEnforcement(t *testing.T) {
 	router := setupRouter()
-	cfg := config.Load()
+	cfg := testConfig(t)
 	tg := testutil.NewTestTokenGenerator(cfg.JWTSecret)
 
 	tests := []struct {
@@ -243,7 +262,7 @@ func TestListSubscriptionsAuthorizationEnforcement(t *testing.T) {
 
 func TestGetSubscriptionByIDAuthorizationEnforcement(t *testing.T) {
 	router := setupRouter()
-	cfg := config.Load()
+	cfg := testConfig(t)
 	tg := testutil.NewTestTokenGenerator(cfg.JWTSecret)
 
 	tests := []struct {
@@ -332,7 +351,7 @@ func TestGetSubscriptionByIDAuthorizationEnforcement(t *testing.T) {
 
 func TestAuthenticationEdgeCases(t *testing.T) {
 	router := setupRouter()
-	cfg := config.Load()
+	cfg := testConfig(t)
 	_ = testutil.NewTestTokenGenerator(cfg.JWTSecret) // Verify token generator creation works
 
 	tests := []struct {

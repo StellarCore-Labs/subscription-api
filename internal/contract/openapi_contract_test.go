@@ -65,8 +65,8 @@ func TestOpenAPI_ResponsesMatchSchemas(t *testing.T) {
 	}{
 		{name: "health", method: http.MethodGet, path: "/api/health"},
 		{name: "plans", method: http.MethodGet, path: "/api/plans"},
-		{name: "subscriptions", method: http.MethodGet, path: "/api/subscriptions"},
-		{name: "subscriptionByID", method: http.MethodGet, path: "/api/subscriptions/sub_test"},
+		{name: "subscriptions", method: http.MethodGet, path: "/api/v1/subscriptions"},
+		{name: "subscriptionByID", method: http.MethodGet, path: "/api/v1/subscriptions/sub_test"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, "http://localhost:8080"+tc.path, nil)

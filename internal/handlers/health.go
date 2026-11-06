@@ -5,35 +5,86 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"stellarbill-backend/internal/outbox"
 )
 
-func (h *Handler) Health(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
+// ServiceName identifies this service in health responses.
+const ServiceName = "stellarbill-backend"
+
+// Overall health states returned by the readiness endpoint.
+const (
+	StatusReady       = "ready"
+	StatusDegraded    = "degraded"
+	StatusUnavailable = "unavailable"
+)
+
+// Database health-check tunables.
+const (
+	// MaxRetries is the number of attempts made before reporting the database down.
+	MaxRetries = 3
+	// MaxDatabaseTimeout bounds each individual ping attempt.
+	MaxDatabaseTimeout = 2 * time.Second
+	// InitialBackoff is the base delay for exponential backoff between pings.
+	InitialBackoff = 100 * time.Millisecond
+)
+
+// DBPinger is the minimal database surface needed by the readiness probe.
+type DBPinger interface {
+	PingContext(ctx context.Context) error
+}
+
+// HealthResponse is the payload returned by the readiness endpoint.
+type HealthResponse struct {
+	Status       string            `json:"status"`
+	Service      string            `json:"service"`
+	Timestamp    string            `json:"timestamp"`
+	Dependencies map[string]string `json:"dependencies"`
+}
+
+var globalOutboxManager *outbox.Manager
+
+// SetOutboxManager wires the outbox manager used by the health endpoints.
+func SetOutboxManager(m *outbox.Manager) {
+	globalOutboxManager = m
+}
+
+// healthStatus builds the health payload, including outbox state when wired.
+func healthStatus() gin.H {
+	status := gin.H{
 		"status":  "ok",
-		"service": "stellarbill-backend",
+		"service": ServiceName,
 	}
 
-	// Check outbox health if available
-	if globalOutboxManager != nil {
-		if err := globalOutboxManager.Health(); err != nil {
-			status["status"] = "degraded"
-			status["outbox"] = gin.H{
-				"status": "unhealthy",
-				"error":  err.Error(),
-			}
-		} else {
-			stats, err := globalOutboxManager.GetStats()
-			if err == nil {
-				status["outbox"] = stats
-			}
+	if globalOutboxManager == nil {
+		return status
+	}
+
+	if err := globalOutboxManager.Health(); err != nil {
+		status["status"] = "degraded"
+		status["outbox"] = gin.H{
+			"status": "unhealthy",
+			"error":  err.Error(),
 		}
+		return status
 	}
 
-	c.JSON(http.StatusOK, status)
+	if stats, err := globalOutboxManager.GetStats(); err == nil {
+		status["outbox"] = stats
+	}
+	return status
+}
+
+func (h *Handler) Health(c *gin.Context) {
+	c.JSON(http.StatusOK, healthStatus())
+}
+
+// Health reports service health for callers that do not use a Handler instance.
+func Health(c *gin.Context) {
+	c.JSON(http.StatusOK, healthStatus())
 }
 
 // OutboxStats returns detailed outbox statistics
@@ -73,10 +124,10 @@ func PublishTestEvent(c *gin.Context) {
 
 	// Create test event data
 	eventData := gin.H{
-		"message":     "This is a test event",
-		"timestamp":   gin.H{"$date": gin.H{"$numberLong": strconv.FormatInt(c.Request.Context().Value("timestamp").(int64), 10)}},
-		"request_id":  c.GetHeader("X-Request-ID"),
-		"user_agent":  c.GetHeader("User-Agent"),
+		"message":    "This is a test event",
+		"timestamp":  gin.H{"$date": gin.H{"$numberLong": strconv.FormatInt(time.Now().UnixMilli(), 10)}},
+		"request_id": c.GetHeader("X-Request-ID"),
+		"user_agent": c.GetHeader("User-Agent"),
 		"ip_address": c.ClientIP(),
 	}
 
@@ -136,7 +187,7 @@ func checkDatabase(db DBPinger) string {
 	// IMPLEMENTATION: Bounded Retry Loop
 	for i := 0; i < MaxRetries; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), MaxDatabaseTimeout)
-		
+
 		lastErr = db.PingContext(ctx)
 		cancel() // Release context resources immediately
 

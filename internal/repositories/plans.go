@@ -130,7 +130,7 @@ func (r *postgresPlanRepository) GetByMerchantID(merchantID string, limit, offse
 	}
 	defer rows.Close()
 	
-	var plans []*Plan
+	plans := []*Plan{}
 	for rows.Next() {
 		plan, err := r.scanPlan(rows)
 		if err != nil {
@@ -218,7 +218,7 @@ func (r *postgresPlanRepository) GetActivePlansByMerchantID(merchantID string) (
 	}
 	defer rows.Close()
 	
-	var plans []*Plan
+	plans := []*Plan{}
 	for rows.Next() {
 		plan, err := r.scanPlan(rows)
 		if err != nil {

@@ -1,14 +1,25 @@
-# StellarCore Subscription API
-Go (Gin) API backend for subscription management and recurring billing plans.
----
+<div align="center">
 
-[![CI Status](https://img.shields.io/github/actions/workflow/status/StellarCore/subscription-api/ci.yml?branch=main&label=CI&logo=github&style=flat-square)](https://github.com/StellarCore/subscription-api/actions)
-[![Code Coverage](https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen?logo=codecov&style=flat-square)](#testing)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/StellarCore/subscription-api?logo=go&style=flat-square)](https://go.dev/)
-[![Gin Framework](https://img.shields.io/badge/frame-Gin-00ADD8?logo=go&logoColor=white&style=flat-square)](https://gin-gonic.com/)
-[![PostgreSQL](https://img.shields.io/badge/database-PostgreSQL-4169E1?logo=postgresql&logoColor=white&style=flat-square)](https://www.postgresql.org/)
-[![Drips Wave Eligible](https://img.shields.io/badge/Drips%20Wave-Eligible-00D2FF?logo=stellar&logoColor=white&style=flat-square)](https://drips.network/)
-[![License](https://img.shields.io/github/license/StellarCore/subscription-api?style=flat-square)](LICENSE)
+  <h1>StellarCore Subscription API</h1>
+  <p>Go (Gin) API backend for subscription management and recurring billing plans.</p>
+
+  <a href="https://github.com/StellarCore-Labs/subscription-api/actions">
+    <img src="https://img.shields.io/github/actions/workflow/status/StellarCore-Labs/subscription-api/ci.yml?branch=main&label=CI&logo=github&style=flat-square" alt="CI Status" />
+  </a>
+  <a href="#testing">
+    <img src="https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen?logo=codecov&style=flat-square" alt="Coverage" />
+  </a>
+  <a href="https://go.dev/">
+    <img src="https://img.shields.io/github/go-mod/go-version/StellarCore-Labs/subscription-api?logo=go&style=flat-square" alt="Go Version" />
+  </a>
+  <a href="https://drips.network/">
+    <img src="https://img.shields.io/badge/Drips%20Wave-Eligible-00D2FF?logo=stellar&logoColor=white&style=flat-square" alt="Drips Wave" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/github/license/StellarCore-Labs/subscription-api?style=flat-square" alt="License" />
+  </a>
+
+</div>
 
 ---
 

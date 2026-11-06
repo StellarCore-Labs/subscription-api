@@ -9,10 +9,13 @@ import (
 
 var Log = logrus.New()
 
+// instrumentationScope identifies this application's logs in the OpenTelemetry pipeline.
+const instrumentationScope = "stellarbill-backend"
+
 func Init() {
 	Log.SetFormatter(&logrus.JSONFormatter{})
 	Log.SetOutput(os.Stdout)
-	Log.AddHook(otellogrus.NewHook())
+	Log.AddHook(otellogrus.NewHook(instrumentationScope))
 
 	level := os.Getenv("LOG_LEVEL")
 	switch level {

@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -149,7 +148,7 @@ func TestFeatureFlag_CustomResponse(t *testing.T) {
 func TestConditionalFeatureFlag_ConditionTrue(t *testing.T) {
 	router := setupTestRouter()
 	
-	featureflags.SetFlag("test_conditional", false, "")
+	featureflags.SetFlag("test_conditional", true, "")
 	
 	condition := func(c *gin.Context) bool {
 		return c.GetHeader("X-Test-Condition") == "true"

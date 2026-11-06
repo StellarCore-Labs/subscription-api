@@ -11,8 +11,8 @@ type PlanService interface {
 
 // SubscriptionService defines the interface for subscription-related operations
 type SubscriptionService interface {
+	subscriptionDetailer
 	ListSubscriptions(c *gin.Context) ([]Subscription, error)
-	GetSubscription(c *gin.Context, id string) (*Subscription, error)
 }
 
 // Handler holds the dependencies for the HTTP handlers

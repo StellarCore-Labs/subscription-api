@@ -15,17 +15,19 @@ type mockSubscriptionService struct {
 	detail   *service.SubscriptionDetail
 	warnings []string
 	err      error
+	tenantID string
 	callerID string
 	id       string
 }
 
-func (m *mockSubscriptionService) GetDetail(_ context.Context, callerID, id string) (*service.SubscriptionDetail, []string, error) {
+func (m *mockSubscriptionService) GetDetail(_ context.Context, tenantID, callerID, id string) (*service.SubscriptionDetail, []string, error) {
+	m.tenantID = tenantID
 	m.callerID = callerID
 	m.id = id
 	return m.detail, m.warnings, m.err
 }
 
-func (m *mockSubscriptionService) ListSubscriptions(_ context.Context) ([]Subscription, error) {
+func (m *mockSubscriptionService) ListSubscriptions(_ *gin.Context) ([]Subscription, error) {
 	return nil, nil
 }
 
@@ -292,8 +294,9 @@ func TestGetSubscription_HappyPath_Returns200WithEnvelope(t *testing.T) {
 	if data["plan_id"] != "plan-1" {
 		t.Errorf("expected data.plan_id=plan-1, got %v", data["plan_id"])
 	}
-	if data["customer"] != "caller-123" {
-		t.Errorf("expected data.customer=caller-123, got %v", data["customer"])
+	// Customer is PII and is redacted by SubscriptionDetail.MarshalJSON.
+	if data["customer"] != "cust_***" {
+		t.Errorf("expected redacted data.customer, got %v", data["customer"])
 	}
 	if data["status"] != "active" {
 		t.Errorf("expected data.status=active, got %v", data["status"])

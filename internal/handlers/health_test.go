@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHealth(t *testing.T) {
+func TestHandlerHealth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := &Handler{}
 

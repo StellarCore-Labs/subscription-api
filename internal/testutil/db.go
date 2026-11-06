@@ -53,7 +53,7 @@ func StartPostgresContainer(ctx context.Context) (*ContainerDSN, error) {
 
 	return &ContainerDSN{
 		DSN:      dsn,
-		Teardown: container.Terminate,
+		Teardown: func(ctx context.Context) error { return container.Terminate(ctx) },
 	}, nil
 }
 

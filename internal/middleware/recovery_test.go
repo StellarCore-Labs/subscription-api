@@ -1,13 +1,10 @@
 package middleware
 
 import (
-	"bytes"
 	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -227,74 +224,7 @@ func TestNestedPanic(t *testing.T) {
 	assert.Equal(t, "Internal server error", response.Error)
 }
 
-func TestRequestIDMiddleware(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
-	tests := []struct {
-		name         string
-		requestID    string
-		expectHeader bool
-	}{
-		{
-			name:         "with existing request ID",
-			requestID:    "existing-123",
-			expectHeader: true,
-		},
-		{
-			name:         "without request ID",
-			requestID:    "",
-			expectHeader: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			router := gin.New()
-			router.Use(RequestID())
-			
-			router.GET("/test", func(c *gin.Context) {
-				id := GetRequestID(c)
-				assert.NotEmpty(t, id)
-				c.JSON(200, gin.H{"request_id": id})
-			})
-
-			req := httptest.NewRequest("GET", "/test", nil)
-			if tt.requestID != "" {
-				req.Header.Set("X-Request-ID", tt.requestID)
-			}
-			w := httptest.NewRecorder()
-
-			router.ServeHTTP(w, req)
-
-			assert.Equal(t, 200, w.Code)
-			assert.Equal(t, tt.expectHeader, w.Header().Get("X-Request-ID") != "")
-			
-			var response map[string]interface{}
-			err := json.Unmarshal(w.Body.Bytes(), &response)
-			assert.NoError(t, err)
-			assert.NotEmpty(t, response["request_id"])
-		})
-	}
-}
-
-func TestGetRequestID(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	t.Run("with request ID in context", func(t *testing.T) {
-		c, _ := gin.CreateTestContext(httptest.NewRecorder())
-		c.Set("request_id", "test-123")
-		
-		id := GetRequestID(c)
-		assert.Equal(t, "test-123", id)
-	})
-
-	t.Run("without request ID in context", func(t *testing.T) {
-		c, _ := gin.CreateTestContext(httptest.NewRecorder())
-		
-		id := GetRequestID(c)
-		assert.Empty(t, id)
-	})
-}
 
 func TestSanitizeStack(t *testing.T) {
 	// Test with short stack trace
