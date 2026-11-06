@@ -1,6 +1,14 @@
-# Stellabill Backend
+# StellarCore Subscription API
+Go (Gin) API backend for subscription management and recurring billing plans.
+---
 
-Go (Gin) API backend for Stellabill - subscription and billing plans API. This repo is backend-only; a separate frontend consumes these APIs.
+[![CI Status](https://img.shields.io/github/actions/workflow/status/StellarCore/subscription-api/ci.yml?branch=main&label=CI&logo=github&style=flat-square)](https://github.com/StellarCore/subscription-api/actions)
+[![Code Coverage](https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen?logo=codecov&style=flat-square)](#testing)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/StellarCore/subscription-api?logo=go&style=flat-square)](https://go.dev/)
+[![Gin Framework](https://img.shields.io/badge/frame-Gin-00ADD8?logo=go&logoColor=white&style=flat-square)](https://gin-gonic.com/)
+[![PostgreSQL](https://img.shields.io/badge/database-PostgreSQL-4169E1?logo=postgresql&logoColor=white&style=flat-square)](https://www.postgresql.org/)
+[![Drips Wave Eligible](https://img.shields.io/badge/Drips%20Wave-Eligible-00D2FF?logo=stellar&logoColor=white&style=flat-square)](https://drips.network/)
+[![License](https://img.shields.io/github/license/StellarCore/subscription-api?style=flat-square)](LICENSE)
 
 ---
 
@@ -567,7 +575,28 @@ The feature flag system includes comprehensive tests covering:
 
 Run tests with: `go test ./...`
 
+---First, audit the 79 broken targets and group them into three categories:
+
+    Obsolete tests: Targets referencing intentionally removed contract entrypoints. Quarantine these with clear explanations.
+    API changes: Targets referencing renamed or modified entrypoints. Update them to match the current contract interface.
+    Actual regressions: Missing entrypoints that are still part of the intended contract API. Re-implement these and add appropriate tests.
+
+For quarantined targets:
+
+    Document why each target is quarantined.
+    Keep them visible in CI reports.
+    Track them for future resolution.
+    Avoid silently excluding entire test suites.
+
+Goal: Get CI green without hiding genuine regressions or sacrificing meaningful test coverage.
+
 ---
+
+## Maintainer Table
+
+maintainer - Aycode01
+telegram channel - [telegram](https://t.me/aycode01)
+
 
 ## License
 
