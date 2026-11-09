@@ -1,6 +1,9 @@
 package repository
 
-import "context"
+import (
+	"context"
+	"sort"
+)
 
 // MockSubscriptionRepo is an in-memory SubscriptionRepository for testing.
 type MockSubscriptionRepo struct {
@@ -95,9 +98,50 @@ func (m *MockStatementRepo) FindByID(_ context.Context, id string) (*StatementRo
 func (m *MockStatementRepo) ListByCustomerID(_ context.Context, customerID string, q StatementQuery) ([]*StatementRow, int, error) {
 	out := make([]*StatementRow, 0)
 	for _, r := range m.records {
-		if r.CustomerID == customerID {
-			out = append(out, r)
+		if r.CustomerID != customerID {
+			continue
 		}
+		if q.SubscriptionID != "" && r.SubscriptionID != q.SubscriptionID {
+			continue
+		}
+		if q.Kind != "" && r.Kind != q.Kind {
+			continue
+		}
+		if q.Status != "" && r.Status != q.Status {
+			continue
+		}
+		if q.StartAfter != "" && r.PeriodStart < q.StartAfter {
+			continue
+		}
+		if q.EndBefore != "" && r.PeriodEnd > q.EndBefore {
+			continue
+		}
+		out = append(out, r)
 	}
-	return out, len(out), nil
+
+	// Sort deterministically (newest issued first) so pagination is stable.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].IssuedAt != out[j].IssuedAt {
+			return out[i].IssuedAt > out[j].IssuedAt
+		}
+		return out[i].ID < out[j].ID
+	})
+
+	total := len(out)
+	page, pageSize := q.Page, q.PageSize
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	start := (page - 1) * pageSize
+	if start >= total {
+		return []*StatementRow{}, total, nil
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	return out[start:end], total, nil
 }

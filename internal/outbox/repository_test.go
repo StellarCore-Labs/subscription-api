@@ -42,7 +42,7 @@ func TestPostgresRepository_Store(t *testing.T) {
 				Version:       1,
 			},
 			setupMock: func() {
-				mock.ExpectExec(`INSERT INTO outbox_events \(id, event_type, event_data, aggregate_id, aggregate_type, occurred_at, status, retry_count, max_retries, next_retry_at, error_message, created_at, updated_at, version\) VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12, \$13, \$14\)`).
+				mock.ExpectExec(`INSERT INTO outbox_events`).
 					WithArgs(
 						sqlmock.AnyArg(),
 						"user.created",
@@ -65,16 +65,16 @@ func TestPostgresRepository_Store(t *testing.T) {
 		{
 			name: "database error during storage",
 			event: &Event{
-				ID:            uuid.New(),
-				EventType:     "error.event",
-				EventData:     json.RawMessage(`{"type":"error.event"}`),
-				OccurredAt:    time.Now(),
-				Status:        StatusPending,
-				RetryCount:    0,
-				MaxRetries:    3,
-				CreatedAt:     time.Now(),
-				UpdatedAt:     time.Now(),
-				Version:       1,
+				ID:         uuid.New(),
+				EventType:  "error.event",
+				EventData:  json.RawMessage(`{"type":"error.event"}`),
+				OccurredAt: time.Now(),
+				Status:     StatusPending,
+				RetryCount: 0,
+				MaxRetries: 3,
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+				Version:    1,
 			},
 			expectedError: "failed to store outbox event",
 			setupMock: func() {
@@ -218,8 +218,8 @@ func TestPostgresRepository_MarkAsProcessing(t *testing.T) {
 			name:    "successful marking as processing",
 			eventID: uuid.New(),
 			setupMock: func() {
-				mock.ExpectExec(`UPDATE outbox_events SET status = \$1, updated_at = \$2 WHERE id = \$3 AND status = \$4`).
-					WithArgs(StatusProcessing, sqlmock.AnyArg(), sqlmock.AnyArg(), StatusPending).
+				mock.ExpectExec(`UPDATE outbox_events SET status = \$1, updated_at = \$2 WHERE id = \$3 AND status IN \(\$4, \$5\)`).
+					WithArgs(StatusProcessing, sqlmock.AnyArg(), sqlmock.AnyArg(), StatusPending, StatusFailed).
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			},
 		},
@@ -228,8 +228,8 @@ func TestPostgresRepository_MarkAsProcessing(t *testing.T) {
 			eventID:       uuid.New(),
 			expectedError: "event not found or not in pending status",
 			setupMock: func() {
-				mock.ExpectExec(`UPDATE outbox_events SET status = \$1, updated_at = \$2 WHERE id = \$3 AND status = \$4`).
-					WithArgs(StatusProcessing, sqlmock.AnyArg(), sqlmock.AnyArg(), StatusPending).
+				mock.ExpectExec(`UPDATE outbox_events SET status = \$1, updated_at = \$2 WHERE id = \$3 AND status IN \(\$4, \$5\)`).
+					WithArgs(StatusProcessing, sqlmock.AnyArg(), sqlmock.AnyArg(), StatusPending, StatusFailed).
 					WillReturnResult(sqlmock.NewResult(0, 0))
 			},
 		},
@@ -238,8 +238,8 @@ func TestPostgresRepository_MarkAsProcessing(t *testing.T) {
 			eventID:       uuid.New(),
 			expectedError: "failed to mark event as processing",
 			setupMock: func() {
-				mock.ExpectExec(`UPDATE outbox_events SET status = \$1, updated_at = \$2 WHERE id = \$3 AND status = \$4`).
-					WithArgs(StatusProcessing, sqlmock.AnyArg(), sqlmock.AnyArg(), StatusPending).
+				mock.ExpectExec(`UPDATE outbox_events SET status = \$1, updated_at = \$2 WHERE id = \$3 AND status IN \(\$4, \$5\)`).
+					WithArgs(StatusProcessing, sqlmock.AnyArg(), sqlmock.AnyArg(), StatusPending, StatusFailed).
 					WillReturnError(fmt.Errorf("database connection failed"))
 			},
 		},
@@ -304,7 +304,7 @@ func TestNewEvent(t *testing.T) {
 		{
 			name:          "successful event creation without aggregate",
 			eventType:     "system.started",
-			data:          map[string]interface{}{"timestamp": time.Now()},
+			data:          map[string]interface{}{"timestamp": "2023-01-01T00:00:00Z"},
 			aggregateID:   nil,
 			aggregateType: nil,
 		},

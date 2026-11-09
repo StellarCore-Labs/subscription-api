@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"stellarbill-backend/internal/auth"
 	"stellarbill-backend/internal/config"
+	"stellarbill-backend/internal/repository"
 	"stellarbill-backend/internal/routes"
 	"stellarbill-backend/internal/testutil"
 )
@@ -33,7 +34,15 @@ func TestMain(m *testing.M) {
 func setupRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	routes.Register(router)
+
+	// Seed subscriptions owned by the callers used by the token helpers below
+	// so the authorization tests observe a successful lookup after authz.
+	subs := repository.NewMockSubscriptionRepo(
+		&repository.SubscriptionRow{ID: "sub-123", PlanID: "plan-1", CustomerID: "admin-user", Status: "active", Amount: "1000", Currency: "USD", Interval: "monthly"},
+		&repository.SubscriptionRow{ID: "sub-456", PlanID: "plan-1", CustomerID: "merchant-user", Status: "active", Amount: "1000", Currency: "USD", Interval: "monthly"},
+		&repository.SubscriptionRow{ID: "test123", PlanID: "plan-1", CustomerID: "admin-user", Status: "active", Amount: "1000", Currency: "USD", Interval: "monthly"},
+	)
+	routes.RegisterWithDependencies(router, routes.Dependencies{Subscriptions: subs})
 	return router
 }
 

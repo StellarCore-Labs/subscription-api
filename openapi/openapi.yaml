@@ -16,12 +16,27 @@ tags:
   - name: Health
   - name: Plans
   - name: Subscriptions
+  - name: Statements
+  - name: Admin
+  - name: Features
 paths:
   /api/health:
     get:
       tags: [Health]
       summary: Health check
       operationId: getHealth
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /api/v1/health:
+    get:
+      tags: [Health]
+      summary: Health check (v1)
+      operationId: getHealthV1
       responses:
         "200":
           description: Service is up
@@ -41,6 +56,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlansResponse"
+        "401":
+          description: Missing or invalid credentials
+  /api/v1/plans:
+    get:
+      tags: [Plans]
+      summary: List billing plans (v1)
+      operationId: listPlansV1
+      responses:
+        "200":
+          description: Plans list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlansResponse"
+        "401":
+          description: Missing or invalid credentials
   /api/subscriptions:
     get:
       tags: [Subscriptions]
@@ -53,18 +84,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SubscriptionsResponse"
+        "401":
+          description: Missing or invalid credentials
+        "403":
+          description: Insufficient permissions
+  /api/v1/subscriptions:
+    get:
+      tags: [Subscriptions]
+      summary: List subscriptions (v1)
+      operationId: listSubscriptionsV1
+      responses:
+        "200":
+          description: Subscriptions list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionsResponse"
+        "401":
+          description: Missing or invalid credentials
+        "403":
+          description: Insufficient permissions
   /api/subscriptions/{id}:
     get:
       tags: [Subscriptions]
       summary: Get one subscription
       operationId: getSubscription
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Subscription identifier
+        - $ref: "#/components/parameters/SubscriptionID"
       responses:
         "200":
           description: Subscription
@@ -72,7 +118,138 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Subscription"
+        "401":
+          description: Missing or invalid credentials
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: Subscription not found
+  /api/v1/subscriptions/{id}:
+    get:
+      tags: [Subscriptions]
+      summary: Get one subscription (v1)
+      operationId: getSubscriptionV1
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionID"
+      responses:
+        "200":
+          description: Subscription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "401":
+          description: Missing or invalid credentials
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: Subscription not found
+  /api/statements:
+    get:
+      tags: [Statements]
+      summary: List billing statements for the caller
+      operationId: listStatements
+      responses:
+        "200":
+          description: Statements list
+        "401":
+          description: Missing or invalid credentials
+  /api/statements/{id}:
+    get:
+      tags: [Statements]
+      summary: Get one billing statement
+      operationId: getStatement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Statement identifier
+      responses:
+        "200":
+          description: Statement detail
+        "401":
+          description: Missing or invalid credentials
+        "404":
+          description: Statement not found
+  /api/admin/purge:
+    post:
+      tags: [Admin]
+      summary: Purge the cache
+      operationId: adminPurgeCache
+      responses:
+        "200":
+          description: Purge result
+        "401":
+          description: Missing or invalid credentials
+        "403":
+          description: Insufficient permissions
+  /api/admin/diagnostics:
+    get:
+      tags: [Admin]
+      summary: Re-run startup diagnostics
+      operationId: adminDiagnostics
+      responses:
+        "200":
+          description: Diagnostics report
+        "401":
+          description: Missing or invalid credentials
+        "403":
+          description: Insufficient permissions
+  /api/admin/reconcile:
+    post:
+      tags: [Admin]
+      summary: Reconcile subscriptions against the contract snapshot
+      operationId: adminReconcile
+      responses:
+        "200":
+          description: Reconciliation report
+        "401":
+          description: Missing or invalid credentials
+        "403":
+          description: Insufficient permissions
+  /api/admin/reports:
+    get:
+      tags: [Admin]
+      summary: List persisted reconciliation reports
+      operationId: adminListReports
+      responses:
+        "200":
+          description: Reconciliation reports
+        "401":
+          description: Missing or invalid credentials
+        "403":
+          description: Insufficient permissions
+  /api/billing/new-flow:
+    get:
+      tags: [Features]
+      summary: New billing flow (feature flagged)
+      operationId: getNewBillingFlow
+      responses:
+        "200":
+          description: Feature is enabled
+        "503":
+          description: Feature is unavailable
+  /api/analytics/advanced:
+    get:
+      tags: [Features]
+      summary: Advanced analytics (feature flagged)
+      operationId: getAdvancedAnalytics
+      responses:
+        "200":
+          description: Feature is enabled
+        "503":
+          description: Feature is unavailable
 components:
+  parameters:
+    SubscriptionID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Subscription identifier
   schemas:
     HealthResponse:
       type: object

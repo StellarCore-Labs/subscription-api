@@ -216,23 +216,26 @@ func TestMetricsMiddleware_MultipleRequests(t *testing.T) {
 	}
 
 	if testutil.ToFloat64(HTTPRequestTotal.WithLabelValues("/count", "GET", "200")) != 5 {
-		t.Errorf("Expected HTTPRequestTotal to be 5, got %f", 
+		t.Errorf("Expected HTTPRequestTotal to be 5, got %f",
 			testutil.ToFloat64(HTTPRequestTotal.WithLabelValues("/count", "GET", "200")))
 	}
 }
 
 func TestPrometheusRegistration(t *testing.T) {
-	metrics := []prometheus.Collector{
-		HTTPRequestDuration,
-		HTTPRequestTotal,
-		DBQueryDuration,
-		DBQueryTotal,
+	metrics := map[string]prometheus.Collector{
+		"http_request_duration_seconds": HTTPRequestDuration,
+		"http_requests_total":           HTTPRequestTotal,
+		"db_query_duration_seconds":     DBQueryDuration,
+		"db_queries_total":              DBQueryTotal,
 	}
 
-	for _, m := range metrics {
-		err := testutil.CollectAndCompare(m, strings.NewReader(""))
-		if err != nil && !strings.Contains(err.Error(), "expected metric") {
-			t.Errorf("Metric collection failed: %v", err)
+	for name, m := range metrics {
+		// Describe on a buffered channel is non-blocking and proves the collector
+		// is valid and registered without requiring any samples to exist.
+		descs := make(chan *prometheus.Desc, 1)
+		m.Describe(descs)
+		if got := len(descs); got != 1 {
+			t.Errorf("%s: expected 1 descriptor, got %d", name, got)
 		}
 	}
 }
@@ -250,6 +253,9 @@ func TestMetricsEndpoint(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/test", nil)
 	r.ServeHTTP(w, req)
+
+	// DB metrics only appear in the scrape once at least one observation exists.
+	RecordDBQuery("SELECT", "users", time.Millisecond, nil)
 
 	w = httptest.NewRecorder()
 	req, _ = http.NewRequest("GET", "/metrics", nil)
@@ -276,7 +282,7 @@ func TestMetricsEndpoint(t *testing.T) {
 
 func TestDBTimer_DifferentOperations(t *testing.T) {
 	resetMetrics()
-	
+
 	operations := []struct {
 		op    string
 		table string

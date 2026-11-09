@@ -7,7 +7,7 @@
     <img src="https://img.shields.io/github/actions/workflow/status/StellarCore-Labs/subscription-api/ci.yml?branch=main&label=CI&logo=github&style=flat-square" alt="CI Status" />
   </a>
   <a href="#testing">
-    <img src="https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen?logo=codecov&style=flat-square" alt="Coverage" />
+    <img src="https://img.shields.io/badge/coverage-%E2%89%A570%25-brightgreen?logo=codecov&style=flat-square" alt="Coverage" />
   </a>
   <a href="https://go.dev/">
     <img src="https://img.shields.io/github/go-mod/go-version/StellarCore-Labs/subscription-api?logo=go&style=flat-square" alt="Go Version" />
@@ -447,7 +447,7 @@ Security notes:
 go test ./... -cover
 ```
 
-Tests include redaction coverage, hash chaining, admin action logging, and middleware auth-failure logging. Coverage currently exceeds 95%.
+Tests include redaction coverage, hash chaining, admin action logging, and middleware auth-failure logging. CI enforces a 70% coverage floor for non-cmd packages (raise it as tests are added).
 
 ---
 

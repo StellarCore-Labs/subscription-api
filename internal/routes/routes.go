@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"net/http"
 	"os"
 	"strings"
 
@@ -21,7 +22,19 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
+// Dependencies optionally injects the repositories backing the API. Nil
+// fields fall back to empty in-memory mocks, which is what local dev uses.
+type Dependencies struct {
+	Subscriptions repository.SubscriptionRepository
+	Plans         repository.PlanRepository
+	Statements    repository.StatementRepository
+}
+
 func Register(r *gin.Engine) {
+	RegisterWithDependencies(r, Dependencies{})
+}
+
+func RegisterWithDependencies(r *gin.Engine, deps Dependencies) {
 	cfg, err := config.Load()
 	if err != nil {
 		// Routes must stay registrable in tests and local runs that do not set
@@ -63,12 +76,21 @@ func Register(r *gin.Engine) {
 		jwtSecret = "dev-secret"
 	}
 
-	subRepo := repository.NewMockSubscriptionRepo()
-	planRepo := repository.NewMockPlanRepo()
+	subRepo := deps.Subscriptions
+	if subRepo == nil {
+		subRepo = repository.NewMockSubscriptionRepo()
+	}
+	planRepo := deps.Plans
+	if planRepo == nil {
+		planRepo = repository.NewMockPlanRepo()
+	}
 	svc := service.NewSubscriptionService(subRepo, planRepo)
 
 	// Statement service wiring (in-memory mock for test/dev)
-	stmtRepo := repository.NewMockStatementRepo()
+	stmtRepo := deps.Statements
+	if stmtRepo == nil {
+		stmtRepo = repository.NewMockStatementRepo()
+	}
 	stmtSvc := service.NewStatementService(subRepo, stmtRepo)
 
 	// Admin handler (token from env or default)
@@ -88,6 +110,17 @@ func Register(r *gin.Engine) {
 	// Public endpoints
 	api.GET("/health", dep, handlers.Health)
 	v1.GET("/health", handlers.Health)
+
+	// Feature-flagged demo endpoints.
+	api.GET("/billing/new-flow", dep, middleware.FeatureFlag("new_billing_flow"), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "New billing flow is enabled"})
+	})
+	api.GET("/analytics/advanced", dep,
+		middleware.RequireAllFeatureFlags("advanced_analytics", "subscriptions_enabled"),
+		func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"message": "Advanced analytics available"})
+		},
+	)
 
 	// Authenticated endpoints
 	authenticated := api.Group("")

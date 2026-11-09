@@ -116,9 +116,9 @@ func TestIntegration_GetSubscription_HappyPath(t *testing.T) {
 	if data["plan_id"] != planID {
 		t.Errorf("expected data.plan_id=%q, got %v", planID, data["plan_id"])
 	}
-	// data.customer
-	if data["customer"] != customerID {
-		t.Errorf("expected data.customer=%q, got %v", customerID, data["customer"])
+	// data.customer is PII and is redacted by SubscriptionDetail.MarshalJSON.
+	if data["customer"] != "cust_***" {
+		t.Errorf("expected redacted data.customer=cust_***, got %v", data["customer"])
 	}
 	// data.status
 	if data["status"] != "active" {

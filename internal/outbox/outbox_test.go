@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"database/sql"
+	"os"
 	"testing"
 	"time"
 
@@ -16,11 +17,11 @@ import (
 // OutboxTestSuite provides a comprehensive test suite for the outbox pattern
 type OutboxTestSuite struct {
 	suite.Suite
-	db          *sql.DB
-	repository  Repository
-	publisher   *MockPublisher
-	dispatcher  Dispatcher
-	service     *Service
+	db         *sql.DB
+	repository Repository
+	publisher  *MockPublisher
+	dispatcher Dispatcher
+	service    *Service
 }
 
 // MockPublisher for testing
@@ -43,12 +44,12 @@ func (m *MockPublisher) Publish(event *Event) error {
 	if delay, exists := m.delayedErrors[event.ID]; exists {
 		time.Sleep(delay)
 	}
-	
+
 	// Check for publish errors
 	if err, exists := m.publishErrors[event.ID]; exists {
 		return err
 	}
-	
+
 	m.publishedEvents = append(m.publishedEvents, event)
 	return nil
 }
@@ -73,15 +74,23 @@ func (m *MockPublisher) Reset() {
 
 // SetupSuite runs once before all tests
 func (suite *OutboxTestSuite) SetupSuite() {
-	// Use an in-memory PostgreSQL or test database
-	// For this example, we'll use a test database connection string
-	db, err := sql.Open("postgres", "postgres://localhost/test_stellabill?sslmode=disable")
+	// These tests require a real PostgreSQL instance provided via TEST_DATABASE_URL.
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		suite.T().Skip("TEST_DATABASE_URL is not set; skipping Postgres integration tests")
+	}
+
+	db, err := sql.Open("postgres", dsn)
 	require.NoError(suite.T(), err)
-	
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		suite.T().Fatalf("test database unavailable: %v", err)
+	}
+
 	suite.db = db
 	suite.repository = NewPostgresRepository(db)
 	suite.publisher = NewMockPublisher()
-	
+
 	// Create test tables
 	err = suite.createTestTables()
 	require.NoError(suite.T(), err)
@@ -99,19 +108,19 @@ func (suite *OutboxTestSuite) TearDownSuite() {
 func (suite *OutboxTestSuite) SetupTest() {
 	suite.cleanupTestData()
 	suite.publisher.Reset()
-	
+
 	config := DefaultDispatcherConfig()
 	config.PollInterval = 100 * time.Millisecond
 	config.BatchSize = 5
 	config.ProcessingTimeout = 1 * time.Second
-	
+
 	suite.dispatcher = NewDispatcher(suite.repository, suite.publisher, config)
-	
+
 	serviceConfig := ServiceConfig{
 		DispatcherConfig: config,
 		PublisherType:    "console",
 	}
-	
+
 	service, err := NewService(suite.db, serviceConfig)
 	require.NoError(suite.T(), err)
 	suite.service = service
@@ -123,7 +132,7 @@ func (suite *OutboxTestSuite) TearDownTest() {
 		err := suite.dispatcher.Stop()
 		require.NoError(suite.T(), err)
 	}
-	
+
 	if suite.service != nil && suite.service.IsRunning() {
 		err := suite.service.Stop()
 		require.NoError(suite.T(), err)
@@ -153,7 +162,7 @@ func (suite *OutboxTestSuite) createTestTables() error {
 		CREATE INDEX IF NOT EXISTS idx_outbox_events_status ON outbox_events(status);
 		CREATE INDEX IF NOT EXISTS idx_outbox_events_next_retry ON outbox_events(next_retry_at) WHERE next_retry_at IS NOT NULL;
 	`
-	
+
 	_, err := suite.db.Exec(query)
 	return err
 }
@@ -165,15 +174,52 @@ func (suite *OutboxTestSuite) cleanupTestData() {
 	}
 }
 
+// waitForFailedRetryCount polls until the event is failed with the given retry count.
+func (suite *OutboxTestSuite) waitForFailedRetryCount(id uuid.UUID, want int, timeout time.Duration) *Event {
+	suite.T().Helper()
+	deadline := time.Now().Add(timeout)
+	var last *Event
+	for time.Now().Before(deadline) {
+		event, err := suite.repository.GetByID(id)
+		if err == nil {
+			last = event
+			if event.Status == StatusFailed && event.RetryCount == want {
+				return event
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	suite.T().Fatalf("event %s did not reach failed retry count %d within %v (last=%+v)", id, want, timeout, last)
+	return nil
+}
+
+// waitForStatus polls until the event reaches want or the timeout elapses.
+func (suite *OutboxTestSuite) waitForStatus(id uuid.UUID, want Status, timeout time.Duration) {
+	suite.T().Helper()
+	deadline := time.Now().Add(timeout)
+	var last interface{}
+	for time.Now().Before(deadline) {
+		event, err := suite.repository.GetByID(id)
+		if err == nil {
+			last = event.Status
+			if event.Status == want {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	suite.T().Fatalf("event %s did not reach status %q within %v (last=%v)", id, want, timeout, last)
+}
+
 // Test Event Creation
 func (suite *OutboxTestSuite) TestNewEvent() {
 	eventType := "test.event"
 	data := map[string]interface{}{"key": "value"}
 	aggregateID := "aggregate-123"
 	aggregateType := "test-aggregate"
-	
+
 	event, err := NewEvent(eventType, data, &aggregateID, &aggregateType)
-	
+
 	require.NoError(suite.T(), err)
 	assert.NotEqual(suite.T(), uuid.Nil, event.ID)
 	assert.Equal(suite.T(), eventType, event.EventType)
@@ -188,15 +234,15 @@ func (suite *OutboxTestSuite) TestNewEvent() {
 func (suite *OutboxTestSuite) TestRepositoryStoreAndGet() {
 	event, err := NewEvent("test.event", map[string]string{"key": "value"}, nil, nil)
 	require.NoError(suite.T(), err)
-	
+
 	// Store event
 	err = suite.repository.Store(event)
 	require.NoError(suite.T(), err)
-	
+
 	// Get event by ID
 	retrieved, err := suite.repository.GetByID(event.ID)
 	require.NoError(suite.T(), err)
-	
+
 	assert.Equal(suite.T(), event.ID, retrieved.ID)
 	assert.Equal(suite.T(), event.EventType, retrieved.EventType)
 	assert.Equal(suite.T(), event.Status, retrieved.Status)
@@ -210,12 +256,12 @@ func (suite *OutboxTestSuite) TestRepositoryGetPendingEvents() {
 		err = suite.repository.Store(event)
 		require.NoError(suite.T(), err)
 	}
-	
+
 	// Get pending events
 	events, err := suite.repository.GetPendingEvents(3)
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), events, 3)
-	
+
 	for _, event := range events {
 		assert.Equal(suite.T(), StatusPending, event.Status)
 	}
@@ -224,14 +270,14 @@ func (suite *OutboxTestSuite) TestRepositoryGetPendingEvents() {
 func (suite *OutboxTestSuite) TestRepositoryUpdateStatus() {
 	event, err := NewEvent("test.event", map[string]string{"key": "value"}, nil, nil)
 	require.NoError(suite.T(), err)
-	
+
 	err = suite.repository.Store(event)
 	require.NoError(suite.T(), err)
-	
+
 	// Update status
 	err = suite.repository.UpdateStatus(event.ID, StatusCompleted, nil)
 	require.NoError(suite.T(), err)
-	
+
 	// Verify update
 	retrieved, err := suite.repository.GetByID(event.ID)
 	require.NoError(suite.T(), err)
@@ -241,14 +287,14 @@ func (suite *OutboxTestSuite) TestRepositoryUpdateStatus() {
 func (suite *OutboxTestSuite) TestRepositoryMarkAsProcessing() {
 	event, err := NewEvent("test.event", map[string]string{"key": "value"}, nil, nil)
 	require.NoError(suite.T(), err)
-	
+
 	err = suite.repository.Store(event)
 	require.NoError(suite.T(), err)
-	
+
 	// Mark as processing
 	err = suite.repository.MarkAsProcessing(event.ID)
 	require.NoError(suite.T(), err)
-	
+
 	// Verify update
 	retrieved, err := suite.repository.GetByID(event.ID)
 	require.NoError(suite.T(), err)
@@ -258,17 +304,17 @@ func (suite *OutboxTestSuite) TestRepositoryMarkAsProcessing() {
 func (suite *OutboxTestSuite) TestRepositoryIncrementRetryCount() {
 	event, err := NewEvent("test.event", map[string]string{"key": "value"}, nil, nil)
 	require.NoError(suite.T(), err)
-	
+
 	err = suite.repository.Store(event)
 	require.NoError(suite.T(), err)
-	
+
 	nextRetryAt := time.Now().Add(1 * time.Hour)
 	errorMsg := "test error"
-	
+
 	// Increment retry count
 	err = suite.repository.IncrementRetryCount(event.ID, nextRetryAt, &errorMsg)
 	require.NoError(suite.T(), err)
-	
+
 	// Verify update
 	retrieved, err := suite.repository.GetByID(event.ID)
 	require.NoError(suite.T(), err)
@@ -280,10 +326,10 @@ func (suite *OutboxTestSuite) TestRepositoryIncrementRetryCount() {
 // Test Publisher Operations
 func (suite *OutboxTestSuite) TestConsolePublisher() {
 	publisher := NewConsolePublisher()
-	
+
 	event, err := NewEvent("test.event", map[string]string{"key": "value"}, nil, nil)
 	require.NoError(suite.T(), err)
-	
+
 	err = publisher.Publish(event)
 	assert.NoError(suite.T(), err)
 }
@@ -291,16 +337,16 @@ func (suite *OutboxTestSuite) TestConsolePublisher() {
 func (suite *OutboxTestSuite) TestMockPublisher() {
 	event, err := NewEvent("test.event", map[string]string{"key": "value"}, nil, nil)
 	require.NoError(suite.T(), err)
-	
+
 	// Test successful publish
 	err = suite.publisher.Publish(event)
 	assert.NoError(suite.T(), err)
 	assert.Len(suite.T(), suite.publisher.GetPublishedEvents(), 1)
-	
+
 	// Test publish error
 	testError := &TimeoutError{msg: "timeout"}
 	suite.publisher.SetPublishError(event.ID, testError)
-	
+
 	err = suite.publisher.Publish(event)
 	assert.Error(suite.T(), err)
 	assert.Equal(suite.T(), testError, err)
@@ -309,11 +355,11 @@ func (suite *OutboxTestSuite) TestMockPublisher() {
 // Test Dispatcher Operations
 func (suite *OutboxTestSuite) TestDispatcherStartStop() {
 	assert.False(suite.T(), suite.dispatcher.IsRunning())
-	
+
 	err := suite.dispatcher.Start()
 	require.NoError(suite.T(), err)
 	assert.True(suite.T(), suite.dispatcher.IsRunning())
-	
+
 	err = suite.dispatcher.Stop()
 	require.NoError(suite.T(), err)
 	assert.False(suite.T(), suite.dispatcher.IsRunning())
@@ -327,19 +373,19 @@ func (suite *OutboxTestSuite) TestDispatcherProcessEvents() {
 		err = suite.repository.Store(event)
 		require.NoError(suite.T(), err)
 	}
-	
+
 	// Start dispatcher
 	err := suite.dispatcher.Start()
 	require.NoError(suite.T(), err)
 	defer suite.dispatcher.Stop()
-	
+
 	// Wait for processing
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Verify events were published
 	publishedEvents := suite.publisher.GetPublishedEvents()
 	assert.Len(suite.T(), publishedEvents, 3)
-	
+
 	// Verify events are marked as completed
 	for _, publishedEvent := range publishedEvents {
 		retrieved, err := suite.repository.GetByID(publishedEvent.ID)
@@ -354,33 +400,32 @@ func (suite *OutboxTestSuite) TestDispatcherRetryMechanism() {
 	require.NoError(suite.T(), err)
 	err = suite.repository.Store(event)
 	require.NoError(suite.T(), err)
-	
+
 	// Set publish error for first attempt
 	suite.publisher.SetPublishError(event.ID, &TimeoutError{msg: "timeout"})
-	
+
 	// Start dispatcher
 	err = suite.dispatcher.Start()
 	require.NoError(suite.T(), err)
 	defer suite.dispatcher.Stop()
-	
+
 	// Wait for processing and retry
 	time.Sleep(1 * time.Second)
-	
+
 	// Remove error for second attempt
 	delete(suite.publisher.publishErrors, event.ID)
-	
-	// Wait for retry
-	time.Sleep(1 * time.Second)
-	
+
+	// Wait for the retry to publish the event.
+	suite.waitForStatus(event.ID, StatusCompleted, 10*time.Second)
+
 	// Verify event was eventually published
 	publishedEvents := suite.publisher.GetPublishedEvents()
 	assert.Len(suite.T(), publishedEvents, 1)
 	assert.Equal(suite.T(), event.ID, publishedEvents[0].ID)
-	
-	// Verify event is marked as completed
+
+	// Verify the retry count was persisted
 	retrieved, err := suite.repository.GetByID(event.ID)
 	require.NoError(suite.T(), err)
-	assert.Equal(suite.T(), StatusCompleted, retrieved.Status)
 	assert.Greater(suite.T(), retrieved.RetryCount, 0)
 }
 
@@ -390,22 +435,20 @@ func (suite *OutboxTestSuite) TestDispatcherMaxRetries() {
 	require.NoError(suite.T(), err)
 	err = suite.repository.Store(event)
 	require.NoError(suite.T(), err)
-	
+
 	// Set persistent publish error
 	persistentError := &TimeoutError{msg: "persistent error"}
 	suite.publisher.SetPublishError(event.ID, persistentError)
-	
+
 	// Start dispatcher
 	err = suite.dispatcher.Start()
 	require.NoError(suite.T(), err)
 	defer suite.dispatcher.Stop()
-	
-	// Wait for max retries
-	time.Sleep(2 * time.Second)
-	
+
+	// Wait for max retries (backoff grows between attempts).
+	retrieved := suite.waitForFailedRetryCount(event.ID, 3, 15*time.Second)
+
 	// Verify event is marked as failed
-	retrieved, err := suite.repository.GetByID(event.ID)
-	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), StatusFailed, retrieved.Status)
 	assert.Equal(suite.T(), 3, retrieved.RetryCount) // Max retries
 	assert.NotNil(suite.T(), retrieved.ErrorMessage)
@@ -416,17 +459,17 @@ func (suite *OutboxTestSuite) TestServicePublishEvent() {
 	err := suite.service.Start()
 	require.NoError(suite.T(), err)
 	defer suite.service.Stop()
-	
+
 	ctx := context.Background()
 	eventType := "test.service.event"
 	data := map[string]string{"service": "test"}
-	
+
 	err = suite.service.PublishEvent(ctx, eventType, data, nil, nil)
 	require.NoError(suite.T(), err)
-	
+
 	// Wait for processing
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Verify event was processed
 	pendingCount, err := suite.service.GetPendingEventsCount()
 	require.NoError(suite.T(), err)
@@ -437,7 +480,7 @@ func (suite *OutboxTestSuite) TestServiceHealth() {
 	err := suite.service.Start()
 	require.NoError(suite.T(), err)
 	defer suite.service.Stop()
-	
+
 	err = suite.service.Health()
 	assert.NoError(suite.T(), err)
 }
@@ -451,22 +494,22 @@ func (suite *OutboxTestSuite) TestCrashRecoveryPendingEvents() {
 		err = suite.repository.Store(event)
 		require.NoError(suite.T(), err)
 	}
-	
+
 	// Simulate crash by not starting dispatcher initially
-	
+
 	// Start dispatcher (simulating recovery)
 	err := suite.dispatcher.Start()
 	require.NoError(suite.T(), err)
 	defer suite.dispatcher.Stop()
-	
+
 	// Wait for recovery processing
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Verify all events were processed
 	pendingEvents, err := suite.repository.GetPendingEvents(10)
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), pendingEvents, 0)
-	
+
 	publishedEvents := suite.publisher.GetPublishedEvents()
 	assert.Len(suite.T(), publishedEvents, 5)
 }
@@ -477,35 +520,34 @@ func (suite *OutboxTestSuite) TestCrashRecoveryProcessingEvents() {
 	require.NoError(suite.T(), err)
 	err = suite.repository.Store(event)
 	require.NoError(suite.T(), err)
-	
+
 	err = suite.repository.MarkAsProcessing(event.ID)
 	require.NoError(suite.T(), err)
-	
+
 	// Wait for processing timeout
 	time.Sleep(2 * time.Second)
-	
+
 	// The dispatcher should eventually retry processing the event
 	err = suite.dispatcher.Start()
 	require.NoError(suite.T(), err)
 	defer suite.dispatcher.Stop()
-	
-	time.Sleep(500 * time.Millisecond)
-	
+
 	// Verify event was eventually processed
-	retrieved, err := suite.repository.GetByID(event.ID)
-	require.NoError(suite.T(), err)
-	assert.Equal(suite.T(), StatusCompleted, retrieved.Status)
+	suite.waitForStatus(event.ID, StatusCompleted, 10*time.Second)
 }
 
 // Test Idempotency
 func (suite *OutboxTestSuite) TestIdempotency() {
 	event, err := NewEvent("test.event", map[string]string{"key": "value"}, nil, nil)
 	require.NoError(suite.T(), err)
-	
+
+	err = suite.repository.Store(event)
+	require.NoError(suite.T(), err)
+
 	// Try to mark as processing multiple times
 	err = suite.repository.MarkAsProcessing(event.ID)
 	require.NoError(suite.T(), err)
-	
+
 	// Second attempt should fail
 	err = suite.repository.MarkAsProcessing(event.ID)
 	assert.Error(suite.T(), err)
@@ -532,7 +574,7 @@ func BenchmarkPublisherPublish(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		err := publisher.Publish(event)

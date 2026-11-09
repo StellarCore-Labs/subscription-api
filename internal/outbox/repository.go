@@ -29,7 +29,7 @@ func (r *postgresRepository) Store(event *Event) error {
 			error_message, created_at, updated_at, version
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
-	
+
 	_, err := r.db.Exec(query,
 		event.ID,
 		event.EventType,
@@ -46,11 +46,11 @@ func (r *postgresRepository) Store(event *Event) error {
 		event.UpdatedAt,
 		event.Version,
 	)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to store outbox event: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -65,13 +65,13 @@ func (r *postgresRepository) GetPendingEvents(limit int) ([]*Event, error) {
 		ORDER BY occurred_at ASC
 		LIMIT $4
 	`
-	
+
 	rows, err := r.db.Query(query, StatusPending, StatusFailed, time.Now(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pending events: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var events []*Event
 	for rows.Next() {
 		event, err := r.scanEvent(rows)
@@ -80,11 +80,11 @@ func (r *postgresRepository) GetPendingEvents(limit int) ([]*Event, error) {
 		}
 		events = append(events, event)
 	}
-	
+
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating pending events: %w", err)
 	}
-	
+
 	return events, nil
 }
 
@@ -97,7 +97,7 @@ func (r *postgresRepository) GetByID(id uuid.UUID) (*Event, error) {
 		FROM outbox_events
 		WHERE id = $1
 	`
-	
+
 	row := r.db.QueryRow(query, id)
 	return r.scanEvent(row)
 }
@@ -109,12 +109,12 @@ func (r *postgresRepository) UpdateStatus(id uuid.UUID, status Status, errorMess
 		SET status = $1, error_message = $2, updated_at = $3
 		WHERE id = $4
 	`
-	
+
 	_, err := r.db.Exec(query, status, errorMessage, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("failed to update event status: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -123,23 +123,23 @@ func (r *postgresRepository) MarkAsProcessing(id uuid.UUID) error {
 	query := `
 		UPDATE outbox_events
 		SET status = $1, updated_at = $2
-		WHERE id = $3 AND status = $4
+		WHERE id = $3 AND status IN ($4, $5)
 	`
-	
-	result, err := r.db.Exec(query, StatusProcessing, time.Now(), id, StatusPending)
+
+	result, err := r.db.Exec(query, StatusProcessing, time.Now(), id, StatusPending, StatusFailed)
 	if err != nil {
 		return fmt.Errorf("failed to mark event as processing: %w", err)
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
-	
+
 	if rowsAffected == 0 {
 		return fmt.Errorf("event not found or not in pending status")
 	}
-	
+
 	return nil
 }
 
@@ -154,13 +154,46 @@ func (r *postgresRepository) IncrementRetryCount(id uuid.UUID, nextRetryAt time.
 			updated_at = $4
 		WHERE id = $5
 	`
-	
+
 	_, err := r.db.Exec(query, nextRetryAt, StatusFailed, errorMessage, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("failed to increment retry count: %w", err)
 	}
-	
+
 	return nil
+}
+
+// MarkFailed records the final failed attempt, including the attempt count.
+func (r *postgresRepository) MarkFailed(id uuid.UUID, retryCount int, errorMessage *string) error {
+	query := `
+		UPDATE outbox_events
+		SET status = $1, retry_count = $2, next_retry_at = NULL, error_message = $3, updated_at = $4
+		WHERE id = $5
+	`
+
+	_, err := r.db.Exec(query, StatusFailed, retryCount, errorMessage, time.Now(), id)
+	if err != nil {
+		return fmt.Errorf("failed to mark event as failed: %w", err)
+	}
+
+	return nil
+}
+
+// ResetStaleProcessing returns events stuck in processing (for example after a
+// crash) to pending so they can be retried.
+func (r *postgresRepository) ResetStaleProcessing(olderThan time.Time) (int64, error) {
+	query := `
+		UPDATE outbox_events
+		SET status = $1, updated_at = $2
+		WHERE status = $3 AND updated_at < $4
+	`
+
+	result, err := r.db.Exec(query, StatusPending, time.Now(), StatusProcessing, olderThan)
+	if err != nil {
+		return 0, fmt.Errorf("failed to reset stale processing events: %w", err)
+	}
+
+	return result.RowsAffected()
 }
 
 // DeleteCompletedEvents deletes completed events older than the specified time
@@ -169,12 +202,12 @@ func (r *postgresRepository) DeleteCompletedEvents(olderThan time.Time) (int64, 
 		DELETE FROM outbox_events
 		WHERE status = $1 AND updated_at < $2
 	`
-	
+
 	result, err := r.db.Exec(query, StatusCompleted, olderThan)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete completed events: %w", err)
 	}
-	
+
 	return result.RowsAffected()
 }
 
@@ -183,7 +216,7 @@ func (r *postgresRepository) scanEvent(scanner interface{ Scan(...interface{}) e
 	var event Event
 	var aggregateID, aggregateType, errorMessage sql.NullString
 	var nextRetryAt sql.NullTime
-	
+
 	err := scanner.Scan(
 		&event.ID,
 		&event.EventType,
@@ -200,27 +233,27 @@ func (r *postgresRepository) scanEvent(scanner interface{ Scan(...interface{}) e
 		&event.UpdatedAt,
 		&event.Version,
 	)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan event: %w", err)
 	}
-	
+
 	if aggregateID.Valid {
 		event.AggregateID = &aggregateID.String
 	}
-	
+
 	if aggregateType.Valid {
 		event.AggregateType = &aggregateType.String
 	}
-	
+
 	if nextRetryAt.Valid {
 		event.NextRetryAt = &nextRetryAt.Time
 	}
-	
+
 	if errorMessage.Valid {
 		event.ErrorMessage = &errorMessage.String
 	}
-	
+
 	return &event, nil
 }
 
@@ -232,12 +265,12 @@ func NewEvent(eventType string, data interface{}, aggregateID, aggregateType *st
 		Timestamp: time.Now(),
 		ID:        uuid.New().String(),
 	}
-	
+
 	jsonData, err := json.Marshal(eventData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal event data: %w", err)
 	}
-	
+
 	return &Event{
 		ID:            uuid.New(),
 		EventType:     eventType,
