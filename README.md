@@ -1,5 +1,7 @@
 <div align="center">
 
+  <img src="assets/logo.png" alt="StellarCore Subscription API logo" width="160" />
+
   <h1>StellarCore Subscription API</h1>
   <p>Go (Gin) API backend for subscription management and recurring billing plans.</p>
 
